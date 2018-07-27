@@ -2,7 +2,11 @@ module Core.Leaves where
 
 import Core.Types
 
-import Data.Time
+import Data.Time(addGregorianMonthsClip
+                ,gregorianMonthLength
+                ,Day(..)
+                ,toGregorian
+                ,fromGregorian)
 import Data.Tuple.Extra
 import Time.Types
 import Data.Hourglass
@@ -18,9 +22,27 @@ dd = dateDay
 adjCreation :: LeaveRequest -> [AbsenceJournal]
 adjCreation = undefined
 
+split :: Day -> Day -> [(Day,Day)]
+split fdate tdate = if lstMDay fdate > tdate
+  then (:) (fdate,tdate)  []
+  else (:) tuple rem
+  where
+    tuple = (,) fdate $ lstMDay fdate
+    rem   = split (addGregorianMonthsClip 1 $ fstMDay fdate) tdate
 
-{-mkAbsence :: Day -> Day -> [(Day,Day)]
-mkAbsence fdate tdate  | sameM fdate tdate && sameY fdate tdate = [(fdate,tdate)]
+
+fstMDay :: Day -> Day
+fstMDay day  =
+  let (year,month,_) = toGregorian day
+  in fromGregorian year month 01
+
+lstMDay :: Day -> Day
+lstMDay day =
+  let (year,month,_) = toGregorian day
+  in fromGregorian year month $ gregorianMonthLength year month
+
+  
+{- split fdate tdate  | sameM fdate tdate && sameY fdate tdate = [(fdate,tdate)]
   where
     sameM :: Day -> Day -> Bool
     sameM fdate tdate = mm fdate == mm tdate
@@ -29,7 +51,13 @@ mkAbsence fdate tdate  | sameM fdate tdate && sameY fdate tdate = [(fdate,tdate)
     mm :: Day -> Int
     mm date = snd3 $ toGregorian date
     yyyy date = fst3 $ toGregorian date
+split fdate tdate =(:) tuple  res
+  where
+    tuple = (,) fdate (eom fdate)
+    res = split (nDate' fdate) tdate
 -}
+--nDate' = undefined
+--eom = undefined
 
 fn :: FromDate -> ToDate -> Either String [(FromDate,ToDate)]
 fn fdate tdate | not (isDateValid fdate && isDateValid tdate) = Left "err"
