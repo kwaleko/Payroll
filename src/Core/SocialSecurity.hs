@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Core.SocialSecurity where
 
 import qualified Data.Map as M
@@ -25,32 +26,34 @@ class Monad m => EmployeeData m where
   getEmployee   :: EmpNumber -> m (Maybe Employee)
   getPycdAmnt   :: EmpNumber -> Paycode -> m (Maybe Amount)
 
-empShare :: (GosiRules m ,EmployeeData m,GosiFormulas m) => EmpNumber -> PayrollConfig -> m [PayrollRecord]
-empShare empNb pconf = do
-  getEmployee empNb >>= \case
-    Nothing -> return []
-    Just x -> do
+empShare :: (GosiRules m ,EmployeeData m,GosiFormulas m) => Employee -> PayrollConfig -> m [PayrollRecord]
+empShare Employee{..} pconf = do
+      let empNb = empNumber 
       let age   = 10 -- empBirthDate emp
-      let nat   = empNationality x
-      let ldate = empLastWorkingDate x
+      let nat   = empNationality 
+      let ldate = empLastWorkingDate 
       let pfrom = confFromDate pconf
       let pto   = confToDate pconf
       rules  <- getRules
-      pcodes <-  eligibleFor age nat EmployeeShare ldate pto
+      pcodes <-  eligibleFor Employee{..} EmployeeShare pto
       recs <- forM pcodes $ \pcode-> do
-        amount <- gosiCalc empNb nat pcode
+        amount <- gosiCalc Employee{..} pcode
         return $ PayrollRecord pfrom pto pcode empNb amount
       return $ filter ((/= 0) . recAmount) recs
 
 
 -- To determine the Gosi that an employee is eligible for
 -- Based on the formula specified in the setup of GOSI
-eligibleFor :: (GosiRules m) => Age -> Nationality -> GosiType -> LastWorkingDate -> PeriodTo -> m [Paycode]
-eligibleFor age nat gType  lstDate pTo  = do
-  map rPaycode . filter checkRules <$> getRules
+--eligibleFor :: (GosiRules m) => Age -> Nationality -> GosiType -> LastWorkingDate -> PeriodTo -> m [Paycode]
+eligibleFor :: (GosiRules m) => Employee -> GosiType -> PeriodTo -> m [Paycode]
+eligibleFor Employee{..} gType pTo  = do
+  let age     = 10
+  let nat     = empNationality
+  let lstDate = empLastWorkingDate
+  map rPaycode . filter (checkRules age nat lstDate) <$> getRules
   where
-   checkRules :: Rule -> Bool
-   checkRules rule
+   checkRules :: Age -> Nationality -> LastWorkingDate -> Rule -> Bool
+   checkRules  age nat lstDate rule
      | rule1 && rule2 && rule3 && rule4 = True
      | True                             = False
      where
@@ -60,14 +63,16 @@ eligibleFor age nat gType  lstDate pTo  = do
        rule4 = lstDate > pTo
 
 -- Why
-gosiCalc   :: (EmployeeData m,GosiFormulas m) => EmpNumber -> Nationality -> Paycode -> m Amount
-gosiCalc empNb nat pcode = do
+gosiCalc   :: (EmployeeData m,GosiFormulas m) => Employee -> Paycode -> m Amount
+gosiCalc Employee{..} pcode = do
+  let empNb = empNumber 
+      nat   = empNationality
   f   <- getFormuls pcode nat EmployeeShare
-  res <- traverse applyF f
+  res <- traverse (applyF empNb) f
   return $ foldl (+) 0 res
   where
-    applyF ::(EmployeeData m) => Formula -> m Amount
-    applyF formula = do
+    applyF ::(EmployeeData m) => EmpNumber -> Formula -> m Amount
+    applyF empNb formula = do
       let fixPaycode = fPaycode formula
           percent    = fRate formula
       maybe 0 (\x -> x * percent `div` 100) <$> getPycdAmnt empNb fixPaycode
