@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE LambdaCase #-}
 module Core.SocialSecurity where
 
 import qualified Data.Map as M
@@ -32,31 +34,34 @@ empShare :: (GosiRules    m
             -> PayrollConfig
             -> m [PayrollRecord]
 empShare empNb pconf = do
-  emp <- getEmployee empNb
-  case emp of
+  --emp <- getEmployee empNb
+  --case emp of
+  getEmployee empNb >>= \case 
     Nothing -> return []
     Just x -> do
       let age =10 -- empBirthDate emp
       let nat = empNationality x
-      let gtype = EmployeeShare
+      --let gtype = EmployeeShare
       let jdate =  empHireDate x
       let ldate = empLastWorkingDate x
       let pfrom = confFromDate pconf
       let pto = confToDate pconf
       rules  <- getRules 
       pcodes <-  eligibleFor
-        age nat gtype (Just jdate) ldate pto 
+        age nat EmployeeShare (Just jdate) ldate pto 
       recs <- forM pcodes $ \pcode-> do
         amount <- gosiCalc empNb nat pcode
         return $ PayrollRecord pfrom pto pcode empNb amount
       return $ filter predicate recs
       where
         predicate :: PayrollRecord -> Bool
-        predicate recrd = if recAmount recrd == 0 then False
-          else  True
+        predicate recrd = recAmount recrd /= 0
+        --predicate recrd = if recAmount recrd == 0 then False
+        -- else  True
 
 
-
+-- To determine the Gosi that an employee is eligible for
+-- Based on the formula specified in the setup of GOSI
 eligibleFor :: (GosiRules m)
             => Age
             -> Nationality
@@ -79,7 +84,8 @@ eligibleFor age nat gType jdate lstDate pTo  = do
        rule3 = rGosiType rule    == gType
        rule4 = lstDate > pTo
 
-
+-- What
+-- Why 
 gosiCalc   :: (EmployeeData m
               ,GosiFormulas m)
            => EmpNumber
@@ -95,7 +101,8 @@ gosiCalc empNb nat pcode = do
     applyF formula = do
       let fixPaycode = fPaycode formula
           percent    = fRate formula
-      amnt <- getPycdAmnt empNb fixPaycode
-      case amnt of
+      --amnt <- getPycdAmnt empNb fixPaycode
+      --case amnt of
+      getPycdAmnt empNb fixPaycode >>= \case
         Nothing -> return 0
         Just x -> return $ x * percent `div` 100
