@@ -40,7 +40,7 @@ empShare empNb pconf = do
       recs <- forM pcodes $ \pcode-> do
         amount <- gosiCalc empNb nat pcode
         return $ PayrollRecord pfrom pto pcode empNb amount
-      return $ filter ((== 0) . recAmount) recs
+      return $ filter ((/= 0) . recAmount) recs
 
 
 -- To determine the Gosi that an employee is eligible for
