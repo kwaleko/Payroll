@@ -40,18 +40,14 @@ empShare empNb pconf = do
       recs <- forM pcodes $ \pcode-> do
         amount <- gosiCalc empNb nat pcode
         return $ PayrollRecord pfrom pto pcode empNb amount
-      return $ filter predicate recs
-      where
-        predicate :: PayrollRecord -> Bool
-        predicate recrd = recAmount recrd /= 0
+      return $ filter ((== 0) . recAmount) recs
 
 
 -- To determine the Gosi that an employee is eligible for
 -- Based on the formula specified in the setup of GOSI
 eligibleFor :: (GosiRules m) => Age -> Nationality -> GosiType -> LastWorkingDate -> PeriodTo -> m [Paycode]
 eligibleFor age nat gType  lstDate pTo  = do
-  rules <- getRules
-  return $ rPaycode <$> filter checkRules rules
+  map rPaycode . filter checkRules <$> getRules
   where
    checkRules :: Rule -> Bool
    checkRules rule
@@ -63,7 +59,6 @@ eligibleFor age nat gType  lstDate pTo  = do
        rule3 = rGosiType rule    == gType
        rule4 = lstDate > pTo
 
--- What
 -- Why
 gosiCalc   :: (EmployeeData m,GosiFormulas m) => EmpNumber -> Nationality -> Paycode -> m Amount
 gosiCalc empNb nat pcode = do
@@ -75,6 +70,5 @@ gosiCalc empNb nat pcode = do
     applyF formula = do
       let fixPaycode = fPaycode formula
           percent    = fRate formula
-      getPycdAmnt empNb fixPaycode >>= \case
-        Nothing -> return 0
-        Just x -> return $ x * percent `div` 100
+      maybe 0 (\x -> x * percent `div` 100) <$> getPycdAmnt empNb fixPaycode
+

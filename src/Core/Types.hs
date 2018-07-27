@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 module Core.Types where
 
+import Data.Time 
 import Data.Map
 import Time.Types
 import GHC.Generics
@@ -89,7 +90,7 @@ data Rule = Rule
   {rFromAge     :: Age
   ,rToAge       :: Age
   ,rNationality :: Nationality
-  ,rPaycode     :: Paycode
+ ,rPaycode     :: Paycode
   ,rGosiType    :: GosiType
   }deriving (Show,Eq,Ord)
 
@@ -143,11 +144,12 @@ data LeaveType = Yearly
                deriving(Show,Eq,Ord)
 
 data LeaveRequest = LeaveRequest
-  {reqNumber        :: String
-  ,reqTransDate     :: Date
+  {
+    --reqNumber        :: String
+   reqTransDate     :: Day
   ,reqEmpl          :: EmpNumber
-  ,reqFromDate      :: Date
-  ,reqToDate        :: Date
+  ,reqFromDate      :: Day
+  ,reqToDate        :: Day
   ,reqLeaveType     :: LeaveType
   ,reqWorkflowState :: WorkflowState
   }deriving(Eq,Show,Ord)
@@ -157,10 +159,27 @@ data WorkflowState = Approved | Rejected | Pending
 
 type LeaveId = Int 
 data AbsenceJournal = AbsenceJournal
-  {absNumber      :: String
-  ,absEmpl        :: EmpNumber
-  ,absFromDate    :: Date
-  ,absToDate      :: Date
-  ,absNbDays      :: Int
+  {absEmpl        :: EmpNumber
+  ,lines          :: [(Day,Day)]
+  --,absNbDays      :: Int
   ,absDescription :: String
   }deriving(Show,Eq,Ord)
+
+instance Arbitrary Day where
+  arbitrary = ModifiedJulianDay <$> (arbitrary :: Gen Integer)
+
+instance Arbitrary LeaveType where
+  arbitrary = elements [Yearly,Sick,Unpaid,Marriage,Study,Maternity]
+
+instance Arbitrary WorkflowState where
+  arbitrary = elements [Approved,Rejected,Pending]
+  
+
+instance Arbitrary LeaveRequest where
+  arbitrary =  LeaveRequest
+    <$> (arbitrary :: Gen Day)
+    <*> (arbitrary :: Gen String)
+    <*> (arbitrary :: Gen Day )
+    <*> (arbitrary :: Gen Day)
+    <*> (arbitrary :: Gen LeaveType)
+    <*> (arbitrary :: Gen WorkflowState)
