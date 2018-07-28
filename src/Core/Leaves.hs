@@ -9,26 +9,29 @@ import Data.Time(addGregorianMonthsClip
                 ,Day(..)
                 ,toGregorian
                 ,fromGregorian)
-import Data.Tuple.Extra
---import Time.Types
---import Data.Hourglass
 
 
 class Monad m => HasLeave m where
   createLeave :: LeaveRequest -> m (Maybe LeaveId)
+  getLeaveSetup :: LeaveType -> m (Maybe LeaveSetup)
+
+class Monad m => HasAbsence m where
+  createAbsence :: AbsenceJournal -> m ()
+  getAbsence :: PeriodFrom -> PeriodTo -> EmpNumber -> m [AbsenceJournal]
+
+class Monad m => HasFormula m where
+  getFormulas :: m [Formula]
 
 
-absCreation :: LeaveRequest -> Maybe AbsenceJournal
-absCreation leave = case reqWorkflowState leave of
-  Approved ->
-    let
-      empNb   = reqEmpl leave
-      fromDate = reqFromDate leave
-      toDate   = reqToDate   leave
-      days     = split fromDate toDate
-    in
-      Just $ AbsenceJournal  "" []  ""
-  _        -> Nothing
+calcDeduction :: (HasAbsence m) => Employee -> PayrollConfig -> m [PayrollRecord]
+calcDeduction emp pconf = return  [PayrollRecord  (fromGregorian 2019 01 01) (fromGregorian 2019 01 01) (Paycode " " "" Deduction GOSI ) "" 10]
+
+absGen :: LeaveRequest -> Maybe AbsenceJournal
+absGen LeaveRequest{..} =
+  let
+    days     = split reqFromDate reqToDate
+    desc     = "Create absence journal for " ++ show reqLeaveType
+  in if reqWorkflowState /= Approved then Nothing else Just $ AbsenceJournal  reqEmpl days desc
 
 -- the date for a leave request should be splited on
 -- a monthly basis so the payrun could deduct the

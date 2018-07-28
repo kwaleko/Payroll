@@ -1,5 +1,11 @@
+{-# LANGUAGE TemplateHaskell #-}
+{-#LANGUAGE QuasiQuotes #-}
+{-#LANGUAGE KindSignatures #-}
+{-#LANGUAGE FlexibleInstances #-}
 module LeaveSpec(spec) where
 
+import           Control.Monad.TestFixture
+import           Control.Monad.TestFixture.TH
 
 import           Data.Time
 import           Test.Hspec
@@ -8,6 +14,9 @@ import           Test.QuickCheck
 
 import           Core.Leaves
 import           Core.Types
+
+
+mkFixture "Fixture" [ts| HasFormula,HasLeave,HasAbsence |]
 
 spec :: Spec
 spec = do
@@ -34,5 +43,21 @@ spec = do
   describe "absCreation should create an absence journal based on a leave request" $
    it "should fail if the leave request is not approved" $ property $
     \leave -> case reqWorkflowState leave of
-      Pending  -> absCreation leave  == Nothing
-      Rejected -> absCreation leave  == Nothing
+      Pending  -> absGen leave  == Nothing
+      Rejected -> absGen leave  == Nothing
+      _        -> absGen leave == absGen leave
+
+  describe "calcDeduction : calcule the amount that should be deducted in the payrun process" $
+   it "should return an empty list if the employee does not have any absence journal in the month of payrun" $ property $ do
+    let fixture = def {
+          _getAbsence = \_ _ _ -> return []
+                  }
+    arb <- mkaCalcDeduction 
+    pure (unTestFixture arb fixture === [])
+
+mkaCalcDeduction :: (HasAbsence m) => Gen (m [PayrollRecord])
+mkaCalcDeduction = calcDeduction
+  <$> (arbitrary :: Gen Employee)
+  <*> (arbitrary :: Gen PayrollConfig)
+
+
