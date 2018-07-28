@@ -3,16 +3,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+
 module Core.SocialSecurity where
 
-import qualified Data.Map as M
 
-import           Core.Types
-import           Control.Monad.Reader
-import           Control.Monad.State 
-import           Data.Either.Extra(maybeToEither)
-import           Time.Types
+import                 Core.Types
+import                 Control.Monad
 
 
 
@@ -28,12 +24,12 @@ class Monad m => EmployeeData m where
 
 empShare :: (GosiRules m ,EmployeeData m,GosiFormulas m) => Employee -> PayrollConfig -> m [PayrollRecord]
 empShare Employee{..} pconf = do
-      let empNb = empNumber 
-      let age   = 10 -- empBirthDate emp
-      let nat   = empNationality 
-      let ldate = empLastWorkingDate 
-      let pfrom = confFromDate pconf
-      let pto   = confToDate pconf
+      let empNb = empNumber
+          age   = 10 -- empBirthDate emp
+          nat   = empNationality
+          ldate = empLastWorkingDate
+          pfrom = confFromDate pconf
+          pto   = confToDate pconf
       rules  <- getRules
       pcodes <-  eligibleFor Employee{..} EmployeeShare pto
       recs <- forM pcodes $ \pcode-> do
@@ -48,8 +44,8 @@ empShare Employee{..} pconf = do
 eligibleFor :: (GosiRules m) => Employee -> GosiType -> PeriodTo -> m [Paycode]
 eligibleFor Employee{..} gType pTo  = do
   let age     = 10
-  let nat     = empNationality
-  let lstDate = empLastWorkingDate
+      nat     = empNationality
+      lstDate = empLastWorkingDate
   map rPaycode . filter (checkRules age nat lstDate) <$> getRules
   where
    checkRules :: Age -> Nationality -> LastWorkingDate -> Rule -> Bool
@@ -65,7 +61,7 @@ eligibleFor Employee{..} gType pTo  = do
 -- Why
 gosiCalc   :: (EmployeeData m,GosiFormulas m) => Employee -> Paycode -> m Amount
 gosiCalc Employee{..} pcode = do
-  let empNb = empNumber 
+  let empNb = empNumber
       nat   = empNationality
   f   <- getFormuls pcode nat EmployeeShare
   res <- traverse (applyF empNb) f
@@ -73,7 +69,6 @@ gosiCalc Employee{..} pcode = do
   where
     applyF ::(EmployeeData m) => EmpNumber -> Formula -> m Amount
     applyF empNb formula = do
-      let fixPaycode = fPaycode formula
-          percent    = fRate formula
+      let fixPaycode  = fPaycode formula
+          percent     = fRate formula
       maybe 0 (\x -> x * percent `div` 100) <$> getPycdAmnt empNb fixPaycode
-
