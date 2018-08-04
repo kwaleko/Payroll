@@ -6,6 +6,7 @@ import Core.Types
 import Core.Utils(dayYear
                  ,fstMDay
                  ,lstMDay)
+import Core.CInterfaces
 import Control.Lens((%~)
                    ,(^.)
                    ,over)
@@ -13,7 +14,7 @@ import Data.Time.Calendar(isLeapYear) --,diffGregorianDurationClip)
 import Data.Bool(bool)
 import Control.Monad
 --import Data.Tuple.Extra
-import Data.Maybe(isJust,fromJust,mapMaybe )
+import Data.Maybe(isJust,fromJust,mapMaybe,isNothing )
 import Data.Time (addGregorianMonthsClip
                 ,gregorianMonthLength
                 ,toGregorian
@@ -26,16 +27,22 @@ import Data.Function((&))
 class Monad m => MonadTime m where
   getCurrentDateTime :: m UTCTime
   getCurrentDate    :: m Day
-
+  
 class Monad m => HasLeave m where
   createLeave :: LeaveRequest -> m (Maybe LeaveId)
 
 class Monad m => HasLeaveSetup m where
   getLeaveSetup :: LeaveType -> m (Maybe LeaveSetup)
 
+class Monad m => HasAdjustment m where
+  getAdjustmentBy :: QueryBy  -> m [AbsenceAdjJournal]
+
 class Monad m => HasAbsence m where
   createAbsence :: AbsenceJournal -> m ()
   getAbsence    :: PeriodFrom -> PeriodTo -> EmpNumber -> m [AbsenceJournal]
+  getAbsenceBy  :: QueryBy -> m [AbsenceJournal]
+
+data QueryBy = QBEmployee String
 
 class Monad m => HasFormula m where
   getFormulas :: LeaveType -> m [Formula]
@@ -51,21 +58,25 @@ calcDeduction emp PayrollConfig{..} = do
     return $ PayrollRecord confFromDate confToDate (Leave (fromJust leavePcode )) empNb amount
   return $ filter ((/=0) . recAmount ) recs
 
-leaveDaysRem :: Day -> Employment -> [AbsenceJournal] -> [AbsenceAdjJournal] -> LeaveSetup  -> Int
-leaveDaysRem tillDate Employment{..} abs adj LeaveSetup{..} =
-  -- foldl plus 0 $ (\year -> ( sum ( adjDays <$> adj )) + lsYearlyVacation -  (sum $ (absBalance year) <$> abs ) )  <$> years
-  --min lsMaxBalance $ sum $ map  (\year -> ( sum ( adjDays <$> adj )) + lsYearlyVacation -  (sum $ (absBalance year) <$> abs ) )  years
-  min lsMaxBalance $ sum $ yrBalance lsYearlyVacation abs adj <$> years
-  where
-    years = [yfrom..yto]
-    yfrom = dayYear . utctDay $ employmentValidFrom
-    yto = dayYear tillDate
+leaveDaysRem :: (HasAbsence m,HasAdjustment m,HasLeaveSetup m,HasEmployment m ) => Employee -> LeaveType -> Day -> m (Maybe Int)
+leaveDaysRem Employee{..} ltype tillDate = do
+  let yto   = dayYear tillDate
+  employment <- getEmployment empNumber
+  abs        <-  getAbsenceBy    (QBEmployee empNumber)
+  adj        <-  getAdjustmentBy (QBEmployee empNumber)
+  lvSetup    <- getLeaveSetup ltype
+  case (isJust lvSetup && isJust employment) of
+     True -> return Nothing
+     _   -> let  yearVacation =  lsYearlyVacation $ fromJust lvSetup
+                 maxBalance   = lsMaxBalance $ fromJust lvSetup
+                 yfrom        = dayYear . utctDay $ employmentValidFrom $ fromJust employment
+                 in return $ Just $ min maxBalance $ sum $ yrBalance yearVacation abs adj <$> [yfrom..yto]
 
 yrBalance :: Int -> [AbsenceJournal] -> [AbsenceAdjJournal] -> Year -> Int
 yrBalance oBalance abs adj year =
     oBalance
   - (sum $ absBalance year <$> abs )
-  + (sum $ adjDays <$> adj)
+  + (sum $ map  adjDays $ filter (\x -> (dayYear . adjTransDate) x == year) adj)
 
 absBalance :: Year -> AbsenceJournal -> Int
 absBalance year abs =
