@@ -39,8 +39,8 @@ class Monad m => HasAdjustment m where
 
 class Monad m => HasAbsence m where
   createAbsence :: AbsenceJournal -> m ()
-  getAbsence    :: PeriodFrom -> PeriodTo -> EmpNumber -> m [AbsenceJournal]
-  getAbsenceBy  :: QueryBy -> LeaveType -> m [AbsenceJournal]
+  getAbsence    :: PeriodFrom -> PeriodTo  -> EmpNumber -> m [AbsenceJournal]
+  getAbsenceBy  :: QueryBy    -> LeaveType -> m [AbsenceJournal]
 
 data QueryBy = QBEmployee String
 
@@ -93,15 +93,11 @@ absGen LeaveRequest{..} = do
   let
     days     = split reqFromDate reqToDate
     desc     = "Create absence journal for " ++ show reqLeaveType
-  getLeaveSetup reqLeaveType >>= \case
-    Just val -> do
-      return $ if reqWorkflowState /= Approved
-        then Nothing
-        else do
-          --lift $ createAbsence $  AbsenceJournal  reqEmpl days (lsPaycode val) desc
-          Just $ AbsenceJournal  reqEmpl days (lsPaycode val) desc
-
-    Nothing -> return Nothing
+  lvSetup <- getLeaveSetup reqLeaveType
+  return $ lvSetup >>= \x -> bool
+                             Nothing
+                             (Just $ AbsenceJournal reqEmpl days (lsPaycode x) desc) $
+                             reqWorkflowState == Approved
 
 -- the date for a leave request should be splited on
 -- a monthly basis so the payrun could deduct the
