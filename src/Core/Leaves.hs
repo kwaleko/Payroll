@@ -67,7 +67,7 @@ leaveDaysRem Employee{..} ltype tillDate = do
   return $ do
     lvSetup'    <-  lvSetup
     employment' <- employment
-    let yfrom        = dayYear . utctDay $ employmentValidFrom $ fromJust employment
+    let yfrom        = dayYear . utctDay $ employmentValidFrom employment'
         maxBalance   = lsMaxBalance lvSetup'
         yearVacation = lsYearlyVacation lvSetup'
     Just $ min maxBalance $ sum $ yrBalance yearVacation abs adj <$> [yfrom..yto]
