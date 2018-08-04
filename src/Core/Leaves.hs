@@ -3,15 +3,29 @@
 module Core.Leaves where
 
 import Core.Types
-
+import Core.Utils(dayYear
+                 ,fstMDay
+                 ,lstMDay)
+import Control.Lens((%~)
+                   ,(^.)
+                   ,over)
+import Data.Time.Calendar(isLeapYear) --,diffGregorianDurationClip)
+import Data.Bool(bool)
 import Control.Monad
-import Data.Maybe(isJust,fromJust)
+--import Data.Tuple.Extra
+import Data.Maybe(isJust,fromJust,mapMaybe )
 import Data.Time (addGregorianMonthsClip
                 ,gregorianMonthLength
                 ,toGregorian
                 ,fromGregorian
+                ,diffDays
+                ,UTCTime(..)
                 ,Day)
+import Data.Function((&))
 
+class Monad m => MonadTime m where
+  getCurrentDateTime :: m UTCTime
+  getCurrentDate    :: m Day
 
 class Monad m => HasLeave m where
   createLeave :: LeaveRequest -> m (Maybe LeaveId)
@@ -30,12 +44,35 @@ class Monad m => HasFormula m where
 calcDeduction :: (HasLeave m,HasAbsence m,HasFormula m) => Employee -> PayrollConfig -> m [PayrollRecord]
 calcDeduction emp PayrollConfig{..} = do
   let empNb = empNumber emp
-  abs <- filter (isJust . absPaycode ) <$> getAbsence confFromDate confToDate empNb
+  abs <-  mapMaybe  (\x -> bool Nothing (Just x) (isJust $ x ^. absPaycode )) <$> getAbsence confFromDate confToDate empNb
   recs <- forM abs $ \absence -> do
-    let leavePcode = absPaycode absence
+    let leavePcode =  absence ^. absPaycode
     amount <- calcFormula absence
     return $ PayrollRecord confFromDate confToDate (Leave (fromJust leavePcode )) empNb amount
   return $ filter ((/=0) . recAmount ) recs
+
+leaveDaysRem :: Day -> Employment -> [AbsenceJournal] -> [AbsenceAdjJournal] -> LeaveSetup  -> Int
+leaveDaysRem tillDate Employment{..} abs adj LeaveSetup{..} =
+  -- foldl plus 0 $ (\year -> ( sum ( adjDays <$> adj )) + lsYearlyVacation -  (sum $ (absBalance year) <$> abs ) )  <$> years
+  --min lsMaxBalance $ sum $ map  (\year -> ( sum ( adjDays <$> adj )) + lsYearlyVacation -  (sum $ (absBalance year) <$> abs ) )  years
+  min lsMaxBalance $ sum $ yrBalance lsYearlyVacation abs adj <$> years
+  where
+    years = [yfrom..yto]
+    yfrom = dayYear . utctDay $ employmentValidFrom
+    yto = dayYear tillDate
+
+yrBalance :: Int -> [AbsenceJournal] -> [AbsenceAdjJournal] -> Year -> Int
+yrBalance oBalance abs adj year =
+    oBalance
+  - (sum $ absBalance year <$> abs )
+  + (sum $ adjDays <$> adj)
+
+absBalance :: Year -> AbsenceJournal -> Int
+absBalance year abs =
+  abs ^. absLines
+  & filter (\(_,b) -> dayYear b == year)
+  & map    (\(a,b) -> (+1) . fromIntegral $ diffDays b a)
+  & sum
 
 calcFormula ::(HasLeave m,HasFormula m) => AbsenceJournal -> m Amount
 calcFormula absence = undefined
@@ -52,7 +89,7 @@ absGen LeaveRequest{..} = do
         else do
           --lift $ createAbsence $  AbsenceJournal  reqEmpl days (lsPaycode val) desc
           Just $ AbsenceJournal  reqEmpl days (lsPaycode val) desc
-         
+
     Nothing -> return Nothing
 
 -- the date for a leave request should be splited on
@@ -65,16 +102,3 @@ split fdate tdate = if lstMDay fdate >= tdate
   where
     tuple = (,) fdate $ lstMDay fdate
     rem   = split (addGregorianMonthsClip 1 $ fstMDay fdate) tdate
-
-setDay :: Int -> (Int -> Int) -> Day -> Day
-setDay nb fn day = let
-  (year,month,_) = toGregorian day
-  in fromGregorian year month $ fn nb
-
-fstMDay :: Day -> Day
-fstMDay day  = setDay 01 id day
-
-lstMDay :: Day -> Day
-lstMDay day =
-  let (year,month,_) = toGregorian day
-  in fromGregorian year month $ gregorianMonthLength year month
