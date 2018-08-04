@@ -26,28 +26,27 @@ import Data.Function((&))
 
 class Monad m => MonadTime m where
   getCurrentDateTime :: m UTCTime
-  getCurrentDate    :: m Day
-  
-class Monad m => HasLeave m where
+  getCurrentDate     :: m Day
+
+class (Monad m) => HasLeave m where
   createLeave :: LeaveRequest -> m (Maybe LeaveId)
 
 class Monad m => HasLeaveSetup m where
   getLeaveSetup :: LeaveType -> m (Maybe LeaveSetup)
 
 class Monad m => HasAdjustment m where
-  getAdjustmentBy :: QueryBy  -> m [AbsenceAdjJournal]
+  getAdjustmentBy :: QueryBy -> LeaveType  -> m [AbsenceAdjJournal]
 
 class Monad m => HasAbsence m where
   createAbsence :: AbsenceJournal -> m ()
   getAbsence    :: PeriodFrom -> PeriodTo -> EmpNumber -> m [AbsenceJournal]
-  getAbsenceBy  :: QueryBy -> m [AbsenceJournal]
+  getAbsenceBy  :: QueryBy -> LeaveType -> m [AbsenceJournal]
 
 data QueryBy = QBEmployee String
 
 class Monad m => HasFormula m where
   getFormulas :: LeaveType -> m [Formula]
 
- -- return  [PayrollRecord  (fromGregorian 2019 01 01) (fromGregorian 2019 01 01) (Paycode " " "" Deduction GOSI ) "" 10]
 calcDeduction :: (HasLeave m,HasAbsence m,HasFormula m) => Employee -> PayrollConfig -> m [PayrollRecord]
 calcDeduction emp PayrollConfig{..} = do
   let empNb = empNumber emp
@@ -58,19 +57,20 @@ calcDeduction emp PayrollConfig{..} = do
     return $ PayrollRecord confFromDate confToDate (Leave (fromJust leavePcode )) empNb amount
   return $ filter ((/=0) . recAmount ) recs
 
-leaveDaysRem :: (HasAbsence m,HasAdjustment m,HasLeaveSetup m,HasEmployment m ) => Employee -> LeaveType -> Day -> m (Maybe Int)
+leaveDaysRem :: (HasAbsence m,HasAdjustment m,HasLeaveSetup m,HasEmployment m) => Employee -> LeaveType -> ToDate -> m (Maybe Int)
 leaveDaysRem Employee{..} ltype tillDate = do
   let yto   = dayYear tillDate
   employment <- getEmployment empNumber
-  abs        <-  getAbsenceBy    (QBEmployee empNumber)
-  adj        <-  getAdjustmentBy (QBEmployee empNumber)
+  abs        <- getAbsenceBy    (QBEmployee empNumber) ltype
+  adj        <- getAdjustmentBy (QBEmployee empNumber) ltype
   lvSetup    <- getLeaveSetup ltype
-  case (isJust lvSetup && isJust employment) of
-     True -> return Nothing
-     _   -> let  yearVacation =  lsYearlyVacation $ fromJust lvSetup
-                 maxBalance   = lsMaxBalance $ fromJust lvSetup
-                 yfrom        = dayYear . utctDay $ employmentValidFrom $ fromJust employment
-                 in return $ Just $ min maxBalance $ sum $ yrBalance yearVacation abs adj <$> [yfrom..yto]
+  return $ do
+    lvSetup'    <-  lvSetup
+    employment' <- employment
+    let yfrom        = dayYear . utctDay $ employmentValidFrom $ fromJust employment
+        maxBalance   = lsMaxBalance lvSetup'
+        yearVacation = lsYearlyVacation lvSetup'
+    Just $ min maxBalance $ sum $ yrBalance yearVacation abs adj <$> [yfrom..yto]
 
 yrBalance :: Int -> [AbsenceJournal] -> [AbsenceAdjJournal] -> Year -> Int
 yrBalance oBalance abs adj year =
